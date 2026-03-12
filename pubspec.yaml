@@ -1,0 +1,38 @@
+name: gym_workout_tracker
+description: A minimalist gym workout tracking app for strength training progression.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_local_notifications: ^21.0.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.2
+  shared_preferences: ^2.5.4
+  timezone: ^0.11.0
+  uuid: ^4.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.8
+  flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/images/gym_logo.png
+  adaptive_icon_background: "#121212"
+  adaptive_icon_foreground: assets/images/gym_logo.png
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/gym_logo.png
