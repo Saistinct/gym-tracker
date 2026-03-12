@@ -1,6 +1,6 @@
 # gym_tracker
 
-A new Flutter project.
+This is a gym tracker project, used to track your weekly progress, body composition and weight.
 
 ## Getting Started
 
