@@ -118,6 +118,8 @@ class _WorkoutDayScreenState extends State<WorkoutDayScreen> {
             SizedBox(height: 10),
             Row(
               children: [
+                Expanded(child: _timerOptionBtn(ctx, 1)),
+                SizedBox(width: 10),
                 Expanded(child: _timerOptionBtn(ctx, 2)),
                 SizedBox(width: 10),
                 Expanded(child: _timerOptionBtn(ctx, 3)),
@@ -180,8 +182,9 @@ class _WorkoutDayScreenState extends State<WorkoutDayScreen> {
           _timerRunning = false;
         });
         TimerService().cancelRestTimer();
-        // Vibrate when done
         HapticFeedback.heavyImpact();
+        Future.delayed(const Duration(milliseconds: 300), () => HapticFeedback.heavyImpact());
+        Future.delayed(const Duration(milliseconds: 600), () => HapticFeedback.heavyImpact());
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('⏰ Rest over! Time to lift! 💪'),
@@ -244,8 +247,14 @@ class _WorkoutDayScreenState extends State<WorkoutDayScreen> {
     if (yes == true) {
       final summary = await widget.workoutService.markDayDone(widget.dayIndex);
       _reload();
-      if (mounted && summary != null) {
+      if (mounted && summary != null && summary.isNotEmpty) {
         await _showWorkoutSummary(summary);
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('🎉 Day Completed!'),
+          backgroundColor: AppTheme.success,
+          duration: Duration(seconds: 2),
+        ));
       }
     }
   }
@@ -733,14 +742,15 @@ class _WorkoutDayScreenState extends State<WorkoutDayScreen> {
                       onTap: () async {
                         Navigator.pop(ctx);
                         for (final sourceEx in d.exercises) {
-                          // Deep copy
+                          // Try to fetch latest state
+                          final latest = widget.workoutService.getLatestExerciseState(sourceEx.exerciseId);
                           final newEx = ExerciseInstance(
                             exerciseId: sourceEx.exerciseId,
                             exerciseName: sourceEx.exerciseName,
-                            weight: sourceEx.weight,
+                            weight: latest?.weight ?? sourceEx.weight,
                             reps: 0,
-                            lastReps: sourceEx.lastReps,
-                            lastWeight: sourceEx.lastWeight,
+                            lastReps: latest?.reps ?? sourceEx.lastReps,
+                            lastWeight: latest?.weight ?? sourceEx.lastWeight,
                             category: sourceEx.category,
                             equipment: sourceEx.equipment,
                           );
@@ -759,10 +769,25 @@ class _WorkoutDayScreenState extends State<WorkoutDayScreen> {
     );
   }
 
-  Widget _exerciseList() => ListView.builder(
+  Widget _exerciseList() => ReorderableListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 120),
+        onReorder: (oldIndex, newIndex) async {
+          if (oldIndex < newIndex) newIndex -= 1;
+          final item = _day.exercises.removeAt(oldIndex);
+          _day.exercises.insert(newIndex, item);
+          await _day.save();
+          _reload();
+        },
+        buildDefaultDragHandles: false,
+        proxyDecorator: (child, _, __) => Material(
+          color: Colors.transparent,
+          child: child,
+        ),
         itemCount: _day.exercises.length,
-        itemBuilder: (_, i) => _exerciseCard(i),
+        itemBuilder: (_, i) => Container(
+          key: ValueKey(_day.exercises[i].exerciseId + i.toString()),
+          child: _exerciseCard(i),
+        ),
       );
 
   Widget _buildFABs() => Padding(
@@ -846,6 +871,18 @@ class _WorkoutDayScreenState extends State<WorkoutDayScreen> {
             iconColor: AppTheme.accent,
             title: Row(
               children: [
+                // Drag handle — only this triggers reordering
+                ReorderableDragStartListener(
+                  index: i,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(0, 8, 10, 8),
+                    child: Icon(
+                      Icons.drag_handle_rounded,
+                      color: AppTheme.textSecondary.withValues(alpha: 0.5),
+                      size: 22,
+                    ),
+                  ),
+                ),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

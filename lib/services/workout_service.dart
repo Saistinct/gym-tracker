@@ -103,6 +103,16 @@ class WorkoutService {
     return -1;
   }
 
+  /// Returns the first day index that hasn't been completed yet,
+  /// including rest days — so the dashboard shows rest days as current.
+  int _firstIncompleteDayIndex() {
+    final days = getAllDays();
+    for (int i = 0; i < days.length; i++) {
+      if (!days[i].isCompleted) return i;
+    }
+    return -1;
+  }
+
   bool get allDaysCompleted => getNextIncompleteDayIndex() == -1;
 
   Future<void> updateDayTitle(int index, String title) async {
@@ -151,8 +161,8 @@ class WorkoutService {
     await _box.clear();
     await _box.addAll(rebuilt);
 
-    // After a reorder, recompute the next actionable day index.
-    final next = getNextIncompleteDayIndex();
+    // After a reorder, point to the first incomplete day (rest days included).
+    final next = _firstIncompleteDayIndex();
     await setCurrentDayIndex(next >= 0 ? next : 0);
   }
 
@@ -247,20 +257,52 @@ class WorkoutService {
 
   /// Returns null if no exercises, otherwise returns a summary list.
   Future<List<Map<String, dynamic>>?> markDayDone(int index) async {
+    print('DEBUG: markDayDone started for day index $index');
     final day = _box.getAt(index)!;
-    if (day.exercises.isEmpty) return null;
+    
+    // Allow empty days to be marked as done
+    if (day.exercises.isEmpty) {
+      print('DEBUG: Day is empty, marking done directly');
+      day.completionDate = DateTime.now();
+      await day.save();
 
+      // Advance to the very next day sequentially (may be a rest day)
+      final nextSeqIndex = index + 1;
+      if (nextSeqIndex < _box.length) {
+        await setCurrentDayIndex(nextSeqIndex);
+      } else {
+        final nextWorkoutIndex = getNextIncompleteDayIndex();
+        if (nextWorkoutIndex >= 0) await setCurrentDayIndex(nextWorkoutIndex);
+      }
+
+      if (allDaysCompleted) {
+        final oldWeek = getWeekCount();
+        await _incrementWeekCount();
+        if (oldWeek == 26 || oldWeek == 52) {
+          await _generateMilestoneReport(oldWeek);
+        }
+        await resetProgram();
+      }
+      return [];
+    }
+
+    print('DEBUG: Building summary');
     // Build summary before overwriting lastReps/lastWeight
     final summary = <Map<String, dynamic>>[];
     for (final ex in day.exercises) {
+      final lastWeight = ex.lastWeight.toDouble();
+      final lastReps = ex.lastReps.toInt();
+      final weight = ex.weight.toDouble();
+      final reps = ex.reps.toInt();
+      
       summary.add({
         'name': ex.exerciseName,
-        'weight': ex.weight,
-        'reps': ex.reps,
-        'lastWeight': ex.lastWeight,
-        'lastReps': ex.lastReps,
-        'weightDelta': ex.weight - ex.lastWeight,
-        'repsDelta': ex.reps - ex.lastReps,
+        'weight': weight,
+        'reps': reps,
+        'lastWeight': lastWeight,
+        'lastReps': lastReps,
+        'weightDelta': weight - lastWeight,
+        'repsDelta': reps - lastReps,
       });
 
       // ---- FEATURE 3: Log Progress ----
@@ -275,6 +317,7 @@ class WorkoutService {
       await _logBox.add(log);
     }
 
+    print('DEBUG: Saving lastReps/lastWeight and completionDate');
     // Save current as last
     for (final ex in day.exercises) {
       ex.lastReps = ex.reps;
@@ -283,17 +326,24 @@ class WorkoutService {
     day.completionDate = DateTime.now();
     await day.save();
 
+    print('DEBUG: Syncing across days');
     // Sync this exercise state to same exercises on other days
     await _syncExerciseAcrossDays(index, day.exercises);
 
-    // Advance current day index (only if not already completed previously)
-    final nextIndex = getNextIncompleteDayIndex();
-    if (nextIndex >= 0) {
-      await setCurrentDayIndex(nextIndex);
+    print('DEBUG: Advancing day index');
+    // Advance to the very next day sequentially (may be a rest day)
+    final nextSeqIndex = index + 1;
+    if (nextSeqIndex < _box.length) {
+      await setCurrentDayIndex(nextSeqIndex);
+    } else {
+      final nextWorkoutIndex = getNextIncompleteDayIndex();
+      if (nextWorkoutIndex >= 0) await setCurrentDayIndex(nextWorkoutIndex);
     }
 
     // Check if all days completed → increment week counter + auto-reset
+    print('DEBUG: Checking if all days completed');
     if (allDaysCompleted) {
+      print('DEBUG: All days completed, generating reports and resetting');
       final oldWeek = getWeekCount();
       await _incrementWeekCount();
 
@@ -305,6 +355,7 @@ class WorkoutService {
       await resetProgram();
     }
 
+    print('DEBUG: markDayDone finished successfully');
     return summary;
   }
 
@@ -350,6 +401,81 @@ class WorkoutService {
   List<ProgressReport> getProgressReports() =>
       _reportBox.values.toList().reversed.toList();
 
+  /// Compares the current week's logs vs last week's logs per exercise.
+  /// Sources exercises from ALL non-rest workout days (the full plan), then
+  /// overlays log data for this week and last week.
+  List<Map<String, dynamic>> getWeeklyComparison() {
+    final currentWeek = getWeekCount();
+    final lastWeek = currentWeek - 1;
+    final allLogs = _logBox.values.toList();
+
+    final Map<String, ProgressLog> thisWeekMap = {};
+    final Map<String, ProgressLog> lastWeekMap = {};
+    for (final log in allLogs) {
+      if (log.weekNumber == currentWeek) {
+        thisWeekMap[log.exerciseId] = log;
+      } else if (log.weekNumber == lastWeek) {
+        lastWeekMap[log.exerciseId] = log;
+      }
+    }
+
+    final Map<String, String> exerciseNames = {};
+    for (int i = 0; i < _box.length; i++) {
+      final day = _box.getAt(i)!;
+      if (day.isRestDay) continue;
+      for (final ex in day.exercises) {
+        exerciseNames.putIfAbsent(ex.exerciseId, () => ex.exerciseName);
+      }
+    }
+
+    for (final log in allLogs) {
+      if (log.weekNumber == currentWeek || log.weekNumber == lastWeek) {
+        exerciseNames.putIfAbsent(log.exerciseId, () => log.exerciseName);
+      }
+    }
+
+    if (exerciseNames.isEmpty) return [];
+
+    final results = <Map<String, dynamic>>[];
+    for (final entry in exerciseNames.entries) {
+      final id = entry.key;
+      final name = entry.value;
+      final thisLog = thisWeekMap[id];
+      final lastLog = lastWeekMap[id];
+
+      final thisWeight = thisLog?.weight ?? 0.0;
+      final thisReps = thisLog?.reps ?? 0;
+      final lastWeight = lastLog?.weight ?? 0.0;
+      final lastReps = lastLog?.reps ?? 0;
+
+      results.add({
+        'exerciseName': name,
+        'thisWeight': thisWeight,
+        'thisReps': thisReps,
+        'lastWeight': lastWeight,
+        'lastReps': lastReps,
+        'weightDelta': thisWeight - lastWeight,
+        'repsDelta': thisReps - lastReps,
+        'hasThisWeek': thisLog != null,
+        'hasLastWeek': lastLog != null,
+      });
+    }
+
+    results.sort((a, b) {
+      final aThis = a['hasThisWeek'] as bool;
+      final bThis = b['hasThisWeek'] as bool;
+      final aLast = a['hasLastWeek'] as bool;
+      final bLast = b['hasLastWeek'] as bool;
+      if (aThis && !bThis) return -1;
+      if (!aThis && bThis) return 1;
+      if (aLast && !bLast) return -1;
+      if (!aLast && bLast) return 1;
+      return (a['exerciseName'] as String).compareTo(b['exerciseName'] as String);
+    });
+
+    return results;
+  }
+
   Future<void> resetProgram() async {
     for (int i = 0; i < _box.length; i++) {
       final day = _box.getAt(i)!;
@@ -362,6 +488,21 @@ class WorkoutService {
       await day.save();
     }
     await setCurrentDayIndex(0);
+  }
+
+  /// Unmarks a completed day — clears completionDate and resets exercise state.
+  Future<void> unmarkDayDone(int index) async {
+    final day = _box.getAt(index)!;
+    day.completionDate = null;
+    for (final ex in day.exercises) {
+      ex.reps = 0;
+      ex.isCompleted = false;
+    }
+    await day.save();
+
+    // Recompute the current day index so the home screen points correctly
+    final next = _firstIncompleteDayIndex();
+    await setCurrentDayIndex(next >= 0 ? next : 0);
   }
 
   // ── Body Measurements ────────────────────────────────────

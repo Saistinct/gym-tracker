@@ -2,7 +2,7 @@ import 'package:hive/hive.dart';
 
 part 'progress_log.g.dart';
 
-@HiveType(typeId: 4)
+@HiveType(typeId: 6)   // ← FIXED: was 4, conflicted with BodyMeasurements
 class ProgressLog extends HiveObject {
   @HiveField(0)
   int weekNumber;

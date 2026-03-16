@@ -449,6 +449,31 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
+          SizedBox(height: 10),
+
+          // Track Progress Button
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton.icon(
+              onPressed: _showTrackProgress,
+              icon: Icon(Icons.trending_up_rounded, color: Colors.white),
+              label: Text(
+                'Track Progress',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.success,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                elevation: 0,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -549,6 +574,345 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // Dashboard shortcut buttons intentionally removed.
+
+  void _showTrackProgress() {
+    final weekCount = widget.workoutService.getWeekCount();
+    final comparison = widget.workoutService.getWeeklyComparison();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.92,
+        expand: false,
+        builder: (_, scrollCtrl) {
+          // Empty state — no logs at all yet
+          if (comparison.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: AppTheme.card,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(Icons.trending_up_rounded,
+                        size: 32,
+                        color: AppTheme.textSecondary.withValues(alpha: 0.4)),
+                  ),
+                  SizedBox(height: 16),
+                  Text('Nothing to compare yet',
+                      style: TextStyle(
+                          color: AppTheme.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700)),
+                  SizedBox(height: 8),
+                  Text(
+                    'Complete at least one workout day to start tracking your progress.',
+                    textAlign: TextAlign.center,
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          // Count how many exercises improved
+          final improved = comparison.where((e) =>
+              (e['weightDelta'] as double) > 0 ||
+              (e['repsDelta'] as int) > 0).length;
+          final total = comparison.length;
+
+          return ListView(
+            controller: scrollCtrl,
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.divider,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              SizedBox(height: 16),
+
+              // Header
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Track Progress',
+                            style: TextStyle(
+                                color: AppTheme.textPrimary,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800)),
+                        SizedBox(height: 4),
+                        Text('Week ${weekCount - 1}  →  Week $weekCount',
+                            style: TextStyle(
+                                color: AppTheme.textSecondary, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  // Summary badge
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.success.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: AppTheme.success.withValues(alpha: 0.25)),
+                    ),
+                    child: Text(
+                      '$improved / $total improved',
+                      style: TextStyle(
+                          color: AppTheme.success,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: 16),
+
+              // Column headers
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Row(
+                  children: [
+                    Expanded(
+                        flex: 5,
+                        child: Text('EXERCISE',
+                            style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.5))),
+                    Expanded(
+                        flex: 3,
+                        child: Text('LAST WK',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.5))),
+                    Expanded(
+                        flex: 3,
+                        child: Text('THIS WK',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.5))),
+                    SizedBox(width: 36),
+                  ],
+                ),
+              ),
+              SizedBox(height: 8),
+
+              // Exercise rows
+              ...comparison.map((e) => _trackProgressCard(e)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _trackProgressCard(Map<String, dynamic> e) {
+    final name = e['exerciseName'] as String;
+    final thisWeight = e['thisWeight'] as double;
+    final thisReps = e['thisReps'] as int;
+    final lastWeight = e['lastWeight'] as double;
+    final lastReps = e['lastReps'] as int;
+    final weightDelta = e['weightDelta'] as double;
+    final repsDelta = e['repsDelta'] as int;
+    final hasThisWeek = e['hasThisWeek'] as bool;
+    final hasLastWeek = e['hasLastWeek'] as bool;
+
+    // Determine overall status
+    final bool improving = weightDelta > 0 || repsDelta > 0;
+    final bool dropping = weightDelta < 0 || repsDelta < 0;
+    final bool isNew = !hasLastWeek && hasThisWeek;
+    final bool missed = hasLastWeek && !hasThisWeek;
+
+    Color statusColor;
+    IconData statusIcon;
+    String statusLabel;
+
+    if (isNew) {
+      statusColor = AppTheme.accent;
+      statusIcon = Icons.star_rounded;
+      statusLabel = 'New';
+    } else if (missed) {
+      statusColor = AppTheme.textSecondary;
+      statusIcon = Icons.remove_rounded;
+      statusLabel = '—';
+    } else if (improving) {
+      statusColor = AppTheme.success;
+      statusIcon = Icons.arrow_upward_rounded;
+      statusLabel = '+';
+    } else if (dropping) {
+      statusColor = AppTheme.danger;
+      statusIcon = Icons.arrow_downward_rounded;
+      statusLabel = '↓';
+    } else {
+      statusColor = AppTheme.warning;
+      statusIcon = Icons.horizontal_rule_rounded;
+      statusLabel = '=';
+    }
+
+    String _fmt(double w) => w == 0.0 ? '—' : '${w.toStringAsFixed(1)}';
+    String _reps(int r) => r == 0 ? '—' : '$r';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppTheme.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (improving && !isNew && !missed)
+              ? AppTheme.success.withValues(alpha: 0.2)
+              : dropping
+                  ? AppTheme.danger.withValues(alpha: 0.15)
+                  : AppTheme.divider,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Exercise name
+          Expanded(
+            flex: 5,
+            child: Text(name,
+                style: TextStyle(
+                    color: AppTheme.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis),
+          ),
+
+          // Last week
+          Expanded(
+            flex: 3,
+            child: Column(
+              children: [
+                Text(hasLastWeek ? '${_fmt(lastWeight)} lbs' : '—',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500)),
+                SizedBox(height: 2),
+                Text(hasLastWeek ? '${_reps(lastReps)} reps' : '',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color:
+                            AppTheme.textSecondary.withValues(alpha: 0.6),
+                        fontSize: 11)),
+              ],
+            ),
+          ),
+
+          // This week
+          Expanded(
+            flex: 3,
+            child: Column(
+              children: [
+                Text(hasThisWeek ? '${_fmt(thisWeight)} lbs' : '—',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: hasThisWeek
+                            ? AppTheme.textPrimary
+                            : AppTheme.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+                SizedBox(height: 2),
+                // Delta badges side by side
+                if (hasThisWeek && hasLastWeek)
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (weightDelta != 0)
+                        _deltaBadge(
+                            '${weightDelta > 0 ? '+' : ''}${weightDelta.toStringAsFixed(1)}',
+                            weightDelta > 0),
+                      if (weightDelta != 0 && repsDelta != 0)
+                        SizedBox(width: 3),
+                      if (repsDelta != 0)
+                        _deltaBadge(
+                            '${repsDelta > 0 ? '+' : ''}$repsDelta r',
+                            repsDelta > 0),
+                      if (weightDelta == 0 && repsDelta == 0)
+                        Text('same',
+                            style: TextStyle(
+                                color: AppTheme.textSecondary
+                                    .withValues(alpha: 0.5),
+                                fontSize: 10)),
+                    ],
+                  )
+                else
+                  Text(hasThisWeek ? '${_reps(thisReps)} reps' : 'not done',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: AppTheme.textSecondary.withValues(alpha: 0.6),
+                          fontSize: 11)),
+              ],
+            ),
+          ),
+
+          // Status icon
+          SizedBox(width: 8),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(statusIcon, color: statusColor, size: 15),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _deltaBadge(String label, bool positive) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+      decoration: BoxDecoration(
+        color: positive
+            ? AppTheme.success.withValues(alpha: 0.15)
+            : AppTheme.danger.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: positive ? AppTheme.success : AppTheme.danger,
+              fontSize: 10,
+              fontWeight: FontWeight.w700)),
+    );
+  }
 
   Widget _dayCircle(int dayNum, String title, bool allDone) {
     const double size = 190;

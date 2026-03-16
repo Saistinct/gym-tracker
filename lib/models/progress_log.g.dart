@@ -8,7 +8,7 @@ part of 'progress_log.dart';
 
 class ProgressLogAdapter extends TypeAdapter<ProgressLog> {
   @override
-  final int typeId = 4;
+  final int typeId = 6;   // ← FIXED: was 4, conflicted with BodyMeasurements
 
   @override
   ProgressLog read(BinaryReader reader) {

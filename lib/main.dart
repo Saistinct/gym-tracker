@@ -7,6 +7,8 @@ import 'models/exercise_instance.dart';
 import 'models/body_measurements.dart';
 import 'models/workout_day.dart';
 import 'models/user_profile.dart';
+import 'models/progress_log.dart';       // ← ADDED
+import 'models/progress_report.dart';    // ← ADDED
 import 'services/workout_service.dart';
 import 'utils/app_theme.dart';
 import 'screens/splash_screen.dart';
@@ -33,6 +35,8 @@ Future<void> main() async {
   Hive.registerAdapter(WorkoutDayAdapter());
   Hive.registerAdapter(UserProfileAdapter());
   Hive.registerAdapter(BodyMeasurementsAdapter());
+  Hive.registerAdapter(ProgressLogAdapter());      // ← ADDED
+  Hive.registerAdapter(ProgressReportAdapter());   // ← ADDED
 
   // Service init
   final workoutService = WorkoutService();
